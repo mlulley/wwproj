@@ -28,7 +28,6 @@ def get_rx_data(names):
         except AttributeError as e:
             print("Error: " + str(e))
 
-
 def get_icd_data(names):
     found = False
     server = 'mysqlserver217.database.windows.net'

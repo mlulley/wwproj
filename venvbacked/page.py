@@ -2,11 +2,14 @@
 
 import requests
 from pprint import pprint
-import os
+import os, uuid
 import pyodbc
 import re
-#import bootstrap_py
+import json
 from flask import Flask, redirect, url_for, render_template, request
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+import pandas as pd
+from bs4 import BeautifulSoup
 
 icdnames = []
 rxnames = []
@@ -56,6 +59,7 @@ def get_data(doc):
             if not exists:
                 get_icd(name)
                 get_rxnorm(name)
+                pubmed_files(name)
 
 def get_icd(name):
     # get ICD data from SQL database
@@ -101,5 +105,218 @@ def get_rxnorm(name):
     except AttributeError as e:
         print("Error: " + str(e))
 
+def pubmed_files(name):
+    # Connect to my storage
+    connect_str = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
+
+    # Create the BlobServiceClient object which will be used to create a container client
+    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+    # Create a unique name for the container
+    container_name = name# + str(uuid.uuid4())
+    # Create the container
+    container_client = blob_service_client.create_container(container_name)
+
+    # Create a file in local data directory to upload and download
+    local_path = "./data"
+    local_file_name = '' #str(name + str(uuid.uuid4()) + ".txt")
+    upload_file_path = '' # os.path.join(local_path, local_file_name)
+
+    # Get links to articles
+    url = 'https://pubmed.ncbi.nlm.nih.gov/'
+    response = requests.get(url + '?term=' + name + '&sort=date')
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    for line in soup.findAll('a'):
+        link = str(line.get('href'))
+        l = re.search(r'/([0-9]+/)', link)
+
+        if not l:
+            print("no link")
+            pass
+        else:
+            l = l.group(1) # url extension
+
+            local_file_name = str(name + str(uuid.uuid4()) + ".txt")
+            upload_file_path = os.path.join(local_path, local_file_name)
+
+            # Add link to the file
+            file = open(upload_file_path, 'w')
+            file.write(url+l)
+            file.close()
+
+            # Create a blob client using the local file name as the name for the blob
+            blob_client = blob_service_client.get_blob_client(container=container_name, blob=local_file_name)
+            print("\nUploading to Azure Storage as blob:\n\t" + local_file_name)
+            # Upload the created file
+            with open(upload_file_path, "rb") as data:
+                blob_client.upload_blob(data)
+
+
+
+
+    # List the blobs in the container
+    print("\nListing blobs...")
+    blob_list = container_client.list_blobs()
+    for blob in blob_list:
+        print("\t" + blob.name)
+
+    # Download the blob to a local file
+    # Add 'DOWNLOAD' before the .txt extension so you can see both files in the data directory
+    download_file_path = os.path.join(local_path, str.replace(local_file_name, '.txt', 'DOWNLOAD.txt'))
+    print("\nDownloading blob to \n\t" + download_file_path)
+    with open(download_file_path, "wb") as download_file:
+        download_file.write(blob_client.download_blob().readall())
+
+    # Clean up
+    print("\nPress the Enter key to begin clean up")
+    raw_input()
+    print("Deleting blob container...")
+    container_client.delete_container()
+    print("Deleting the local source and downloaded files...")
+    os.remove(upload_file_path)
+    os.remove(download_file_path)
+    print("Done")
+
+
 if __name__ == "__main__":
     app.run()
+
+"""
+    # Setup
+    datasource_name = "mywwstorage"
+    skillset_name = "medical-tutorial"
+    index_name = "medical-tutorial"
+    indexer_name = "medtutorial-indexer"
+    endpoint = "https://wwmedsearch.search.windows.net"
+    headers = {'Content-Type': 'application/json',
+               'api-key': '6A719CA26E0D445DFAFDB0220E13B9B4'}
+    params = {
+        'api-version': '2019-05-06'
+    }
+
+    # Create a data source
+    datasourceConnectionString = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
+    datasource_payload = {
+        "name": datasource_name,
+        "description": "Demo files to demonstrate cognitive search capabilities.",
+        "type": "azureblob",
+        "credentials": {
+            "connectionString": datasourceConnectionString
+        },
+        "container": {
+            "name": "mydocuments"
+        }
+    }
+    r = requests.put(endpoint + "/datasources/" + datasource_name,
+                     data=json.dumps(datasource_payload), headers=headers, params=params)
+    print(r.status_code)
+
+    # Create a skillset
+    skillset_payload = {
+        "name": skillset_name,
+        "description":
+            "Extract entities, detect language and extract key-phrases",
+        "skills":
+            [
+                {
+                    "@odata.type": "#Microsoft.Skills.Text.EntityRecognitionSkill",
+                    "categories": ["Organization"],
+                    "defaultLanguageCode": "en",
+                    "inputs": [
+                        {
+                            "name": "text", "source": "/document/content"
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "organizations", "targetName": "organizations"
+                        }
+                    ]
+                },
+                {
+                    "@odata.type": "#Microsoft.Skills.Text.LanguageDetectionSkill",
+                    "inputs": [
+                        {
+                            "name": "text", "source": "/document/content"
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "languageCode",
+                            "targetName": "languageCode"
+                        }
+                    ]
+                },
+                {
+                    "@odata.type": "#Microsoft.Skills.Text.SplitSkill",
+                    "textSplitMode": "pages",
+                    "maximumPageLength": 4000,
+                    "inputs": [
+                        {
+                            "name": "text",
+                            "source": "/document/content"
+                        },
+                        {
+                            "name": "languageCode",
+                            "source": "/document/languageCode"
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "textItems",
+                            "targetName": "pages"
+                        }
+                    ]
+                },
+                {
+                    "@odata.type": "#Microsoft.Skills.Text.KeyPhraseExtractionSkill",
+                    "context": "/document/pages/*",
+                    "inputs": [
+                        {
+                            "name": "text", "source": "/document/pages/*"
+                        },
+                        {
+                            "name": "languageCode", "source": "/document/languageCode"
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "keyPhrases",
+                            "targetName": "keyPhrases"
+                        }
+                    ]
+                }
+            ]
+    }
+    r = requests.put(endpoint + "/skillsets/" + skillset_name, data=json.dumps(skillset_payload), headers=headers,
+                     params=params)
+    print(r.status_code)
+
+    # Query service for an index definition
+    r = requests.get(endpoint + "/indexes/" + index_name,
+                     headers=headers, params=params)
+    pprint(json.dumps(r.json(), indent=1))
+
+    # Query the index to return the contents of organizations
+    r = requests.get(endpoint + "/indexes/" + index_name +
+                     "/docs?&search=*&$select=organizations", headers=headers, params=params)
+    pprint(json.dumps(r.json(), indent=1))
+
+    # Get the data from blob
+    STORAGEACCOUNTNAME = "mywwstorage"
+    STORAGEACCOUNTKEY = "HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ=="
+    LOCALFILENAME = "out.txt"
+    CONTAINERNAME = "mydocuments"
+    BLOBNAME = "abstract-insomnia.txt"
+
+    # download
+    t1 = time.time()
+
+    print("\nListing blobs...")
+    # List the blobs in the container
+    blob_list = container_client.list_blobs()
+    for blob in blob_list:
+        print("\t" + blob.name)
+    t2 = time.time()
+    print(("It takes %s seconds to download " + BLOBNAME) % (t2 - t1))
+"""
