@@ -8,8 +8,22 @@ import re
 import json
 from flask import Flask, redirect, url_for, render_template, request
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-import pandas as pd
 from bs4 import BeautifulSoup
+import azure.cosmos.documents as documents
+import azure.cosmos.cosmos_client as cosmos_client
+import azure.cosmos.exceptions as exceptions
+from azure.cosmos.partition_key import PartitionKey
+import datetime
+import config
+
+import pandas as pd
+import time
+
+# Global Variables
+HOST = config.settings['host']
+MASTER_KEY = config.settings['master_key']
+DATABASE_ID = config.settings['database_id']
+CONTAINER_ID = config.settings['container_id']
 
 icdnames = []
 rxnames = []
@@ -59,7 +73,7 @@ def get_data(doc):
             if not exists:
                 get_icd(name)
                 get_rxnorm(name)
-                pubmed_files(name)
+                search_index(name)
 
 def get_icd(name):
     # get ICD data from SQL database
@@ -112,7 +126,7 @@ def pubmed_files(name):
     # Create the BlobServiceClient object which will be used to create a container client
     blob_service_client = BlobServiceClient.from_connection_string(connect_str)
     # Create a unique name for the container
-    container_name = name# + str(uuid.uuid4())
+    container_name = name  # + str(uuid.uuid4())
     # Create the container
     container_client = blob_service_client.create_container(container_name)
 
@@ -131,7 +145,7 @@ def pubmed_files(name):
         l = re.search(r'/([0-9]+/)', link)
 
         if not l:
-            print("no link")
+            #print("no link")
             pass
         else:
             l = l.group(1) # url extension
@@ -146,48 +160,21 @@ def pubmed_files(name):
 
             # Create a blob client using the local file name as the name for the blob
             blob_client = blob_service_client.get_blob_client(container=container_name, blob=local_file_name)
-            print("\nUploading to Azure Storage as blob:\n\t" + local_file_name)
+            #print("\nUploading to Azure Storage as blob:\n\t" + local_file_name)
             # Upload the created file
             with open(upload_file_path, "rb") as data:
                 blob_client.upload_blob(data)
 
+    search_index(name)
 
-
-
-    # List the blobs in the container
-    print("\nListing blobs...")
-    blob_list = container_client.list_blobs()
-    for blob in blob_list:
-        print("\t" + blob.name)
-
-    # Download the blob to a local file
-    # Add 'DOWNLOAD' before the .txt extension so you can see both files in the data directory
-    download_file_path = os.path.join(local_path, str.replace(local_file_name, '.txt', 'DOWNLOAD.txt'))
-    print("\nDownloading blob to \n\t" + download_file_path)
-    with open(download_file_path, "wb") as download_file:
-        download_file.write(blob_client.download_blob().readall())
-
-    # Clean up
-    print("\nPress the Enter key to begin clean up")
-    raw_input()
-    print("Deleting blob container...")
-    container_client.delete_container()
-    print("Deleting the local source and downloaded files...")
-    os.remove(upload_file_path)
-    os.remove(download_file_path)
-    print("Done")
-
-
-if __name__ == "__main__":
-    app.run()
-
-"""
+def search_index(name):
     # Setup
     datasource_name = "mywwstorage"
-    skillset_name = "medical-tutorial"
+    skillset_name = "medical-search"
     index_name = "medical-tutorial"
     indexer_name = "medtutorial-indexer"
     endpoint = "https://wwmedsearch.search.windows.net"
+    datasourceConnectionString = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
     headers = {'Content-Type': 'application/json',
                'api-key': '6A719CA26E0D445DFAFDB0220E13B9B4'}
     params = {
@@ -195,7 +182,6 @@ if __name__ == "__main__":
     }
 
     # Create a data source
-    datasourceConnectionString = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
     datasource_payload = {
         "name": datasource_name,
         "description": "Demo files to demonstrate cognitive search capabilities.",
@@ -207,8 +193,7 @@ if __name__ == "__main__":
             "name": "mydocuments"
         }
     }
-    r = requests.put(endpoint + "/datasources/" + datasource_name,
-                     data=json.dumps(datasource_payload), headers=headers, params=params)
+    r = requests.put(endpoint + "/datasources/" + datasource_name,data=json.dumps(datasource_payload), headers=headers, params=params)
     print(r.status_code)
 
     # Create a skillset
@@ -288,35 +273,134 @@ if __name__ == "__main__":
                 }
             ]
     }
-    r = requests.put(endpoint + "/skillsets/" + skillset_name, data=json.dumps(skillset_payload), headers=headers,
-                     params=params)
+    r = requests.put(endpoint + "/skillsets/" + skillset_name, data=json.dumps(skillset_payload), headers=headers,params=params)
     print(r.status_code)
 
+    # Create an index
+    index_payload = {
+        "name": index_name,
+        "fields": [
+            {
+                "name": "id",
+                "type": "Edm.String",
+                "key": "true",
+                "searchable": "true",
+                "filterable": "false",
+                "facetable": "false",
+                "sortable": "true"
+            },
+            {
+                "name": "content",
+                "type": "Edm.String",
+                "sortable": "false",
+                "searchable": "true",
+                "filterable": "false",
+                "facetable": "false"
+            },
+            {
+                "name": "languageCode",
+                "type": "Edm.String",
+                "searchable": "true",
+                "filterable": "false",
+                "facetable": "false"
+            },
+            {
+                "name": "keyPhrases",
+                "type": "Collection(Edm.String)",
+                "searchable": "true",
+                "filterable": "false",
+                "facetable": "false"
+            },
+            {
+                "name": "organizations",
+                "type": "Collection(Edm.String)",
+                "searchable": "true",
+                "sortable": "false",
+                "filterable": "false",
+                "facetable": "false"
+            }
+        ]
+    }
+    r = requests.put(endpoint + "/indexes/" + index_name,data=json.dumps(index_payload), headers=headers, params=params)
+    print(r.status_code)
+
+    # Create an indexer
+    indexer_payload = {
+        "name": indexer_name,
+        "dataSourceName": datasource_name,
+        "targetIndexName": index_name,
+        "skillsetName": skillset_name,
+        "fieldMappings": [
+            {
+                "sourceFieldName": "metadata_storage_path",
+                "targetFieldName": "id",
+                "mappingFunction":
+                    {"name": "base64Encode"}
+            },
+            {
+                "sourceFieldName": "content",
+                "targetFieldName": "content"
+            }
+        ],
+        "outputFieldMappings":
+            [
+                {
+                    "sourceFieldName": "/document/organizations",
+                    "targetFieldName": "organizations"
+                },
+                {
+                    "sourceFieldName": "/document/pages/*/keyPhrases/*",
+                    "targetFieldName": "keyPhrases"
+                },
+                {
+                    "sourceFieldName": "/document/languageCode",
+                    "targetFieldName": "languageCode"
+                }
+            ],
+        "parameters":
+            {
+                "maxFailedItems": -1,
+                "maxFailedItemsPerBatch": -1,
+                "configuration":
+                    {
+                        "dataToExtract": "contentAndMetadata",
+                        "imageAction": "generateNormalizedImages"
+                    }
+            }
+    }
+    r = requests.put(endpoint + "/indexers/" + indexer_name,data=json.dumps(indexer_payload), headers=headers, params=params)
+    print(r.status_code)
+
+    # Get indexer status
+    r = requests.get(endpoint + "/indexers/" + indexer_name + "/status", headers=headers, params=params)
+    pprint(json.dumps(r.json(), indent=1))
+
     # Query service for an index definition
-    r = requests.get(endpoint + "/indexes/" + index_name,
-                     headers=headers, params=params)
+    r = requests.get(endpoint + "/indexes/" + index_name,headers=headers, params=params)
     pprint(json.dumps(r.json(), indent=1))
 
     # Query the index to return the contents of organizations
-    r = requests.get(endpoint + "/indexes/" + index_name +
-                     "/docs?&search=*&$select=organizations", headers=headers, params=params)
+    r = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=organizations", headers=headers, params=params)
     pprint(json.dumps(r.json(), indent=1))
 
-    # Get the data from blob
-    STORAGEACCOUNTNAME = "mywwstorage"
-    STORAGEACCOUNTKEY = "HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ=="
-    LOCALFILENAME = "out.txt"
-    CONTAINERNAME = "mydocuments"
-    BLOBNAME = "abstract-insomnia.txt"
+if __name__ == "__main__":
+    search_index("insomnia")
+    #pubmed_files("insomnia")
+    #app.run()
 
-    # download
-    t1 = time.time()
 
-    print("\nListing blobs...")
-    # List the blobs in the container
-    blob_list = container_client.list_blobs()
-    for blob in blob_list:
-        print("\t" + blob.name)
-    t2 = time.time()
-    print(("It takes %s seconds to download " + BLOBNAME) % (t2 - t1))
-"""
+
+'''  goes at bottom of pubmed_files()
+# List the blobs in the container
+print("\nListing blobs...")
+blob_list = container_client.list_blobs()
+for blob in blob_list:
+    print("\t" + blob.name)
+
+# Download the blob to a local file
+# Add 'DOWNLOAD' before the .txt extension so you can see both files in the data directory
+download_file_path = os.path.join(local_path, str.replace(local_file_name, '.txt', 'DOWNLOAD.txt'))
+print("\nDownloading blob to \n\t" + download_file_path)
+with open(download_file_path, "wb") as download_file:
+    download_file.write(blob_client.download_blob().readall())
+'''

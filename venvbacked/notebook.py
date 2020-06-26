@@ -13,8 +13,12 @@ for line in soup.findAll('a'):
     l = re.search(r'/([0-9]+/)', link)
 
     try:
-        l = l.group(1) # url extension
-        r = requests.get(url + l)
+        l = url + l.group(1) # url extension
+        print(l)
+
+
+
+        '''r = requests.get(url + l)
         soup = BeautifulSoup(r.text, "html.parser")
 
         # get the abstract
@@ -28,13 +32,8 @@ for line in soup.findAll('a'):
             if not found:
                 pass
             else:
-                print(found.group(1))
+                print(found.group(1))'''
     except:
-        print("no link")
+        #print("no link")
         pass
-
-
-#download_url = 'http://web.mta.info/developers/'+ link
-#time.sleep(1)
-
 
