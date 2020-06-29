@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -47,7 +47,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <p>Enter your diagnosis or medication name:</p>
-                            <input type="text" class="form-control p-2 w-100 bd-highlight" style="height: 150px;" placeholder="Type here" name="nm" />
+                            <input type="text" class="container-fluid overflow-auto" style="height: 150px;" placeholder="Type here" name="nm" />
                             <input type="submit" value="submit" />
                         </div>
                         <div class="form-row">
@@ -57,8 +57,8 @@
                             </div>
                         </div>
                     </div>
+                </form>
             </div>
-            </form>
         </div>
         <div class="col">
             <div class="panel panel-default pt-4">
@@ -108,12 +108,18 @@
 
 <div>
     <div class="col">
-        <p>Links</p>
-            {% for file in files %}
-            <div class="container-fluid overflow-auto mt-4 mb-4 border rounded-lg">
-                <p class="text-capitalize font-weight-normal" style="height: 200px;">{{file}}</p>
+        <p>Relevant References</p>
+        {% for i in range(tlen) %}
+        <div class="container-fluid overflow-auto mt-4 mb-4 border rounded-lg">
+            <div class="text-capitalize font-weight-normal" style="height: 200px;">
+                <a href="#" class="underline mb-4 font-weight-bold">{{titles[i]}}</a>
+                <p> </p>
+                <p>ICD-10 Codes: {% for code in fileicd %}{{code}} {% endfor %}</p>
+                <p>Authors: {% for author in authors[i] %}{{author}} {% endfor %}</p>
+                <p>Key Phrases: {% for phrase in phrases[i] %}{{phrase}}, {% endfor %}</p>
             </div>
-            {% endfor %}
+        </div>
+        {% endfor %}
     </div>
 </div>
 

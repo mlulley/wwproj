@@ -16,21 +16,16 @@ from azure.cosmos.partition_key import PartitionKey
 import datetime
 import config
 
-import pandas as pd
-import time
-
 # Global Variables
 icdnames = []
 rxnames = []
 icds = []
 rxns = []
-files = []
-filetracker = [] # keep track of the indeces of file clusters
-'''HOST = config.settings['host']
-MASTER_KEY = config.settings['master_key']
-DATABASE_ID = config.settings['database_id']
-CONTAINER_ID = config.settings['container_id']'''
-
+filesdict = {}
+filetitles=[]
+fileauthors=[]
+filekeys=[]
+fileicd=[]
 
 app = Flask(__name__)
 
@@ -41,9 +36,7 @@ def home():
         #search_index(doc)
         get_data(doc)
 
-    print(files)
-
-    return render_template("index.html", icdnames=icdnames, rxnames=rxnames, icds=icds, rxns=rxns, lenicd=len(icdnames), lenrx=len(rxnames), files=files)
+    return render_template("index.html", icdnames=icdnames, rxnames=rxnames, icds=icds, rxns=rxns, lenicd=len(icdnames), lenrx=len(rxnames), titles=filetitles, authors=fileauthors, phrases=filekeys, tlen=len(filetitles), fileicd=fileicd)
 
 '''@app.route("/<name>")
 def user(name):
@@ -77,10 +70,10 @@ def get_data(doc):
                     break
             if not exists:
                 #get_icd(name)
-                #get_rxnorm(name)
+                get_rxnorm(name)
                 search_index(name)
 
-def get_icd(names):
+def get_icd(names, i):
     # get ICD data from SQL database
     found = False
     server = 'mysqlserver217.database.windows.net'
@@ -105,6 +98,8 @@ def get_icd(names):
                     # code found --> insert into array
                     icdnames.insert(0,name)
                     icds.insert(0,row[2])
+                    filesdict[name][i]['icd'] = row[2]
+                    fileicd.append(row[2])
         row = cursor.fetchone()
 
 def get_rxnorm(name):
@@ -179,12 +174,16 @@ def pubmed_files(name):
     search_index(name)
 
 def search_index(name):
+    # we do not want to repeat everything if we've already done this
+    for x in (rxnames + icdnames):
+        if (str(x) == name):
+            return 1
+
     # Setup
-    namefile = []
+    filesdict[name] = {}
     datasource_name = "mywwstorage"
     skillset_name = "medical-search"
     index_name = "medical-tutorial"
-    #indexer_name = "medtutorial-indexer"
     endpoint = "https://wwmedsearch.search.windows.net"
     datasourceConnectionString = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
     headers = {'Content-Type': 'application/json',
@@ -336,80 +335,46 @@ def search_index(name):
     r = requests.get(endpoint + "/indexes/" + index_name + "/docs?api-version=2019-05-06&search=" + name, headers=headers)
     #print(r.status_code)
 
-    '''# Create an indexer
-    indexer_payload = {
-        "name": indexer_name,
-        "dataSourceName": datasource_name,
-        "targetIndexName": index_name,
-        "skillsetName": skillset_name,
-        "fieldMappings": [
-            {
-                "sourceFieldName": "metadata_storage_path",
-                "targetFieldName": "id",
-                "mappingFunction":
-                    {"name": "base64Encode"}
-            },
-            {
-                "sourceFieldName": "content",
-                "targetFieldName": "content"
-            }
-        ],
-        "outputFieldMappings":
-            [
-                {
-                    "sourceFieldName": "/document/organizations",
-                    "targetFieldName": "organizations"
-                },
-                {
-                    "sourceFieldName": "/document/pages/*/keyPhrases/*",
-                    "targetFieldName": "keyPhrases"
-                },
-                {
-                    "sourceFieldName": "/document/languageCode",
-                    "targetFieldName": "languageCode"
-                }
-            ],
-        "parameters":
-            {
-                "maxFailedItems": -1,
-                "maxFailedItemsPerBatch": -1,
-                "configuration":
-                    {
-                        "dataToExtract": "contentAndMetadata",
-                        "imageAction": "generateNormalizedImages"
-                    }
-            }
-    }
-    r = requests.get(endpoint + "/indexers/" + indexer_name,data=json.dumps(indexer_payload), headers=headers)
-    print(r.status_code)
-
-    # Get indexer status
-    r = requests.get(endpoint + "/indexers/" + indexer_name + "/status", headers=headers, params=params)
-    pprint(json.dumps(r.json(), indent=1))'''
-
     # Query service for an index definition
-    r = requests.get(endpoint + "/indexes/" + index_name,headers=headers, params=params)
+    #r = requests.get(endpoint + "/indexes/" + index_name,headers=headers, params=params)
     #pprint(json.dumps(r.json(), indent=1))
 
     # Query the index to return the content and keyphrases
     r1 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=content", headers=headers, params=params)
     r2 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=keyphrases", headers=headers, params=params)
+    r3 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=people", headers=headers, params=params)
     content = [article['content'] for article in r1.json()['value']]
     phrases = [article['keyphrases'] for article in r2.json()['value']]
+    people = [article['people'] for article in r3.json()['value']]
 
-    # files and key phrases will be at the same index of their respective array
+    # extract data (title,article,key phrase,etc) from raw text
+    i = 0
     for x in content:
-        namefile.append(x)
+        filesdict[name][i] = {}
+        filesdict[name][i]['article'] = x[2:]
+        rx = re.search('\n\r\n(.*\n{0,1}.*)\n\r\n', x)
+        if not rx:
+            pass
+        else:
+            title = rx.group(1)
+            filetitles.append(title)
+            filesdict[name][i]['title'] = str(title)
+        i+=1
+
+    i=0
     for x in phrases:
-        get_icd(x)
+        filesdict[name][i]['keyphrases'] = x
+        filekeys.append(x)
+        get_icd(x, i)
+        i+=1
 
-    files.append(namefile)
-    filetracker.append(name)
-
-    #pprint(json.dumps(r.json(), indent=1))
+    i=0
+    for x in people:
+        filesdict[name][i]['authors'] = x
+        fileauthors.append(x)
+        i+=1
 
 if __name__ == "__main__":
-    #get_icd(["insomnia","Megan"])
     #search_index("insomnia")
     #pubmed_files("insomnia")
     app.run()
