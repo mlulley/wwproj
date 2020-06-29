@@ -39,26 +39,27 @@
     </div>
 </nav>
 
-<form action="#" method="post" class="px-4" role="form">
-    <div class="form-row">
-        <div class="col-md-4">
-            <div class="form-group">
-                <p class="pt-4">Enter your diagnosis or medication name:</p>
-                <input type="text" class="form-control" style="height: 150px;" placeholder="Type here" name="nm" />
-                <input type="submit" value="submit" />
-            </div>
-            <div class="form-row">
-                <div class="form-group col-md-4 offset-md-8">
-                    <div class="float-right">
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</form>
-
 <div class="container">
     <div class="row">
+        <div class="col">
+            <div class="panel panel-default pt-4">
+                <form action="#" method="post" role="form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <p>Enter your diagnosis or medication name:</p>
+                            <input type="text" class="form-control p-2 w-100 bd-highlight" style="height: 150px;" placeholder="Type here" name="nm" />
+                            <input type="submit" value="submit" />
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group col-md-4 offset-md-8">
+                                <div class="float-right">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+            </div>
+            </form>
+        </div>
         <div class="col">
             <div class="panel panel-default pt-4">
                 <table class="table table-bordered table-striped table-hover">
@@ -102,6 +103,17 @@
                 </table>
             </div>
         </div>
+    </div>
+</div>
+
+<div>
+    <div class="col">
+        <p>Links</p>
+            {% for file in files %}
+            <div class="container-fluid overflow-auto mt-4 mb-4 border rounded-lg">
+                <p class="text-capitalize font-weight-normal" style="height: 200px;">{{file}}</p>
+            </div>
+            {% endfor %}
     </div>
 </div>
 

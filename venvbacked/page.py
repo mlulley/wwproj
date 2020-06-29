@@ -20,15 +20,17 @@ import pandas as pd
 import time
 
 # Global Variables
-HOST = config.settings['host']
-MASTER_KEY = config.settings['master_key']
-DATABASE_ID = config.settings['database_id']
-CONTAINER_ID = config.settings['container_id']
-
 icdnames = []
 rxnames = []
 icds = []
 rxns = []
+files = []
+filetracker = [] # keep track of the indeces of file clusters
+'''HOST = config.settings['host']
+MASTER_KEY = config.settings['master_key']
+DATABASE_ID = config.settings['database_id']
+CONTAINER_ID = config.settings['container_id']'''
+
 
 app = Flask(__name__)
 
@@ -36,9 +38,12 @@ app = Flask(__name__)
 def home():
     if request.method == "POST":
         doc = request.form["nm"]
+        #search_index(doc)
         get_data(doc)
 
-    return render_template("index.html", icdnames=icdnames, rxnames=rxnames, icds=icds, rxns=rxns, lenicd=len(icdnames), lenrx=len(rxnames))
+    print(files)
+
+    return render_template("index.html", icdnames=icdnames, rxnames=rxnames, icds=icds, rxns=rxns, lenicd=len(icdnames), lenrx=len(rxnames), files=files)
 
 '''@app.route("/<name>")
 def user(name):
@@ -71,11 +76,11 @@ def get_data(doc):
                     print(name + " already in list")
                     break
             if not exists:
-                get_icd(name)
-                get_rxnorm(name)
+                #get_icd(name)
+                #get_rxnorm(name)
                 search_index(name)
 
-def get_icd(name):
+def get_icd(names):
     # get ICD data from SQL database
     found = False
     server = 'mysqlserver217.database.windows.net'
@@ -89,11 +94,17 @@ def get_icd(name):
     row = cursor.fetchone()
 
     while row and not found:
-        if (name == row[1]):
-            # code found --> insert into array
-            icdnames.insert(0,name)
-            icds.insert(0,row[2])
-            found = True
+        for name in names:
+            exists = False
+            name = str(name).lower()
+            if (name == row[1]):
+                for x in icdnames:
+                    if (name == str(x)):
+                        exists = True
+                if not exists:
+                    # code found --> insert into array
+                    icdnames.insert(0,name)
+                    icds.insert(0,row[2])
         row = cursor.fetchone()
 
 def get_rxnorm(name):
@@ -169,10 +180,11 @@ def pubmed_files(name):
 
 def search_index(name):
     # Setup
+    namefile = []
     datasource_name = "mywwstorage"
     skillset_name = "medical-search"
     index_name = "medical-tutorial"
-    indexer_name = "medtutorial-indexer"
+    #indexer_name = "medtutorial-indexer"
     endpoint = "https://wwmedsearch.search.windows.net"
     datasourceConnectionString = "DefaultEndpointsProtocol=https;AccountName=mywwstorage;AccountKey=HlIn8m0AfR/YINbuL51aB9riMY+ghksRPVlHhf5600mUrlHBKz1zbL14c5ycXX94Ja1oXcasguZ6J4Fr8uYUoQ==;EndpointSuffix=core.windows.net"
     headers = {'Content-Type': 'application/json',
@@ -190,11 +202,11 @@ def search_index(name):
             "connectionString": datasourceConnectionString
         },
         "container": {
-            "name": "mydocuments"
+            "name": name
         }
     }
     r = requests.put(endpoint + "/datasources/" + datasource_name,data=json.dumps(datasource_payload), headers=headers, params=params)
-    print(r.status_code)
+    #print(r.status_code)
 
     # Create a skillset
     skillset_payload = {
@@ -274,7 +286,7 @@ def search_index(name):
             ]
     }
     r = requests.put(endpoint + "/skillsets/" + skillset_name, data=json.dumps(skillset_payload), headers=headers,params=params)
-    print(r.status_code)
+    #print(r.status_code)
 
     # Create an index
     index_payload = {
@@ -321,10 +333,10 @@ def search_index(name):
             }
         ]
     }
-    r = requests.put(endpoint + "/indexes/" + index_name,data=json.dumps(index_payload), headers=headers, params=params)
-    print(r.status_code)
+    r = requests.get(endpoint + "/indexes/" + index_name + "/docs?api-version=2019-05-06&search=" + name, headers=headers)
+    #print(r.status_code)
 
-    # Create an indexer
+    '''# Create an indexer
     indexer_payload = {
         "name": indexer_name,
         "dataSourceName": datasource_name,
@@ -368,26 +380,39 @@ def search_index(name):
                     }
             }
     }
-    r = requests.put(endpoint + "/indexers/" + indexer_name,data=json.dumps(indexer_payload), headers=headers, params=params)
+    r = requests.get(endpoint + "/indexers/" + indexer_name,data=json.dumps(indexer_payload), headers=headers)
     print(r.status_code)
 
     # Get indexer status
     r = requests.get(endpoint + "/indexers/" + indexer_name + "/status", headers=headers, params=params)
-    pprint(json.dumps(r.json(), indent=1))
+    pprint(json.dumps(r.json(), indent=1))'''
 
     # Query service for an index definition
     r = requests.get(endpoint + "/indexes/" + index_name,headers=headers, params=params)
-    pprint(json.dumps(r.json(), indent=1))
+    #pprint(json.dumps(r.json(), indent=1))
 
-    # Query the index to return the contents of organizations
-    r = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=organizations", headers=headers, params=params)
-    pprint(json.dumps(r.json(), indent=1))
+    # Query the index to return the content and keyphrases
+    r1 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=content", headers=headers, params=params)
+    r2 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=keyphrases", headers=headers, params=params)
+    content = [article['content'] for article in r1.json()['value']]
+    phrases = [article['keyphrases'] for article in r2.json()['value']]
+
+    # files and key phrases will be at the same index of their respective array
+    for x in content:
+        namefile.append(x)
+    for x in phrases:
+        get_icd(x)
+
+    files.append(namefile)
+    filetracker.append(name)
+
+    #pprint(json.dumps(r.json(), indent=1))
 
 if __name__ == "__main__":
-    search_index("insomnia")
+    #get_icd(["insomnia","Megan"])
+    #search_index("insomnia")
     #pubmed_files("insomnia")
-    #app.run()
-
+    app.run()
 
 
 '''  goes at bottom of pubmed_files()
