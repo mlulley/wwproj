@@ -64,9 +64,9 @@ def get_data(doc):
     else:
         for name in ents:
             name = name.lower()
-            pubmed_files(name)
-            '''get_rxnorm(name)
-            search_index(name)'''
+            '''pubmed_files(name)
+            get_rxnorm(name)'''
+            search_index(name)
 
 def get_icd(names, i):
     # get ICD data from SQL database

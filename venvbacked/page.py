@@ -380,8 +380,8 @@ def search_index(name):
 
 if __name__ == "__main__":
     #search_index("insomnia")
-    pubmed_files("insomnia")
-    #app.run()
+    #pubmed_files("insomnia")
+    app.run()
 
 
 '''  goes at bottom of pubmed_files()
