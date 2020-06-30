@@ -33,12 +33,13 @@ app = Flask(__name__)
 
 @app.route("/", methods=["POST","GET"])
 def home():
+    del links[:]
     if request.method == "POST":
         doc = request.form["nm"]
         #search_index(doc)
         get_data(doc)
 
-    return render_template("index.html", icdnames=icdnames, rxnames=rxnames, icds=icds, rxns=rxns, lenicd=len(icdnames), lenrx=len(rxnames), titles=filetitles, authors=fileauthors, phrases=filekeys, tlen=len(filetitles), fileicd=fileicd)
+    return render_template("search.html", titles=filetitles, authors=fileauthors, phrases=filekeys, tlen=len(filetitles), fileicd=fileicd)
 
 '''@app.route("/<name>")
 def user(name):
@@ -63,17 +64,9 @@ def get_data(doc):
     else:
         for name in ents:
             name = name.lower()
-            # if already in list, skip it
-            exists = False
-            for x in (rxnames+icdnames):
-                if (str(x) == name):
-                    exists = True
-                    print(name + " already in list")
-                    break
-            if not exists:
-                #get_icd(name)
-                get_rxnorm(name)
-                search_index(name)
+            pubmed_files(name)
+            '''get_rxnorm(name)
+            search_index(name)'''
 
 def get_icd(names, i):
     # get ICD data from SQL database
@@ -142,7 +135,6 @@ def pubmed_files(name):
     local_path = "./data"
     local_file_name = '' #str(name + str(uuid.uuid4()) + ".txt")
     upload_file_path = '' # os.path.join(local_path, local_file_name)'''
-    links = []
 
     # Get links to articles
     url = 'https://pubmed.ncbi.nlm.nih.gov/'
@@ -175,14 +167,9 @@ def pubmed_files(name):
             with open(upload_file_path, "rb") as data:
                 blob_client.upload_blob(data)'''
 
-    search_index(name)
+    #search_index(name)
 
 def search_index(name):
-    # we do not want to repeat everything if we've already done this
-    for x in (rxnames + icdnames):
-        if (str(x) == name):
-            return 1
-
     # Setup
     filesdict[name] = {}
     datasource_name = "mywwstorage"
@@ -196,7 +183,7 @@ def search_index(name):
         'api-version': '2019-05-06'
     }
 
-    # Create a data source
+    '''# Create a data source
     datasource_payload = {
         "name": datasource_name,
         "description": "Demo files to demonstrate cognitive search capabilities.",
@@ -341,7 +328,7 @@ def search_index(name):
 
     # Query service for an index definition
     #r = requests.get(endpoint + "/indexes/" + index_name,headers=headers, params=params)
-    #pprint(json.dumps(r.json(), indent=1))
+    #pprint(json.dumps(r.json(), indent=1))'''
 
     # Query the index to return the content and keyphrases
     r1 = requests.get(endpoint + "/indexes/" + index_name + "/docs?&search=*&$select=content", headers=headers, params=params)
@@ -380,8 +367,8 @@ def search_index(name):
 
 if __name__ == "__main__":
     #search_index("insomnia")
-    pubmed_files("insomnia")
-    #app.run()
+    #pubmed_files("insomnia")
+    app.run()
 
 
 '''  goes at bottom of pubmed_files()
