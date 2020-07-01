@@ -1,4 +1,8 @@
 # Python to Linux Web App on Azure
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'build'
+    projects: '/venv/'
 # Build your Python project and deploy it to Azure as a Linux Web App.
 # Change python version to one thats appropriate for your application.
 # https://docs.microsoft.com/azure/devops/pipelines/languages/python
